@@ -17,7 +17,28 @@
   See the comments in the header file for an idea of what it should look like.
 */
 void sr_arpcache_sweepreqs(struct sr_instance *sr) { 
-    /* Fill this in */
+    struct sr_arpreq *req = sr->cache.requests;
+    struct sr_arpreq *next_req;
+
+    while (req) {
+        next_req = req->next;
+
+        /* Check if we should resend the ARP request or destroy it */
+        time_t now = time(NULL);
+        if (difftime(now, req->sent) >= 1) {
+            if (req->times_sent >= 5) {
+                /* TODO: If sent 5 times, send ICMP host unreachable and destroy the request */
+                
+                sr_arpreq_destroy(&sr->cache, req);
+            } else {
+                /* TODO: Resend ARP request */
+                /*send_arp_request(sr, req);*/
+                req->sent = now;
+                req->times_sent++;
+            }
+        }
+        req = next_req;
+    }
 }
 
 /* You should not need to touch the rest of this code. */
