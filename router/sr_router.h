@@ -67,6 +67,11 @@ int sr_read_from_server(struct sr_instance* );
 /* -- sr_router.c -- */
 void sr_init(struct sr_instance* );
 void sr_handlepacket(struct sr_instance* , uint8_t * , unsigned int , char* );
+int check_eth_len(uint8_t *packet, unsigned int len);
+int check_ip_len_cs(uint8_t *pkt, unsigned int len);
+int check_icmp_len_cs(uint8_t *pkt, int len);
+void eth_header(sr_ethernet_hdr_t *eth_hdr, struct sr_if *interface, uint8_t *dest_mac)
+void ip_header(sr_ip_hdr_t *ip_hdr, uint32_t src_ip, uint32_t dst_ip, uint16_t len, uint8_t ttl, uint8_t protocol)
 
 /* -- sr_if.c -- */
 void sr_add_interface(struct sr_instance* , const char* );
