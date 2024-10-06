@@ -156,7 +156,7 @@ int check_icmp_len_cs(uint8_t *pkt, int len) {
 }
 
 /*--------------------------------------------------------------------- 
- * Helper function to prepare Ethernet and IPheader
+ * Helper function to prepare Ethernet and IP header
  *---------------------------------------------------------------------*/
 /* Helper function to prepare Ethernet header */
 void eth_header(sr_ethernet_hdr_t *eth_hdr, struct sr_if *interface, uint8_t *dest_mac) {
