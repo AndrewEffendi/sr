@@ -73,6 +73,7 @@ int check_ip_len_cs(uint8_t *pkt, unsigned int len);
 int check_icmp_len_cs(uint8_t *pkt, int len);
 void eth_header(sr_ethernet_hdr_t *eth_hdr, struct sr_if *interface, uint8_t *dest_mac);
 void ip_header(sr_ip_hdr_t *ip_hdr, uint32_t src_ip, uint32_t dst_ip, uint16_t len, uint8_t ttl, uint8_t protocol);
+void handle_arp(struct sr_instance *sr, uint8_t *pkt, char *interface, unsigned int len);
 
 /* -- sr_if.c -- */
 void sr_add_interface(struct sr_instance* , const char* );

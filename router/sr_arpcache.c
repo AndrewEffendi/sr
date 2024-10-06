@@ -10,6 +10,72 @@
 #include "sr_router.h"
 #include "sr_if.h"
 #include "sr_protocol.h"
+#include "sr_rt.h"
+#include "sr_utils.h"
+
+/*
+  Handles an ARP request.
+*/
+void handle_arp_request(struct sr_instance *sr, struct sr_arpreq *req) {
+    time_t now = time(NULL);
+
+    /* Check if it's time to resend the request */
+    if (difftime(now, req->sent) >= 1) {
+        if (req->times_sent > 5) {
+            /* Send ICMP unreachable (type 3, code 1) to source of request */
+            struct sr_packet *packet = req->packets;
+            while (packet) {
+                send_icmp3_error(3, 1, sr, packet->buf, packet->iface);
+                packet = packet->next;
+            }
+            /* Destroy the request */
+            sr_arpreq_destroy(&sr->cache, req);
+        } else {
+            /* Prepare and send an ARP request */
+            send_arp_request(sr, req);
+            req->sent = now;
+            req->times_sent++;
+        }
+    }
+}
+
+/*
+  Constructs and sends an ARP request.
+*/
+void send_arp_request(struct sr_instance *sr, struct sr_arpreq *req) {
+    struct sr_if *my_if = sr_get_interface(sr, req->packets->iface);
+    uint8_t *pkt = malloc(sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t));
+    
+    if (!pkt) {
+        fprintf(stderr, "Memory allocation failed for ARP request.\n");
+        return;
+    }
+
+    sr_ethernet_hdr_t *eth_hdr = (sr_ethernet_hdr_t *)pkt;
+    sr_arp_hdr_t *arp_hdr = (sr_arp_hdr_t *)(pkt + sizeof(sr_ethernet_hdr_t));
+
+    /* Fill in Ethernet header */
+    memcpy(eth_hdr->ether_shost, my_if->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
+    memset(eth_hdr->ether_dhost, 255, sizeof(uint8_t) * ETHER_ADDR_LEN);
+    eth_hdr->ether_type = htons(ethertype_arp);
+
+    /* Fill in ARP header */
+    arp_hdr->ar_hrd = htons(arp_hrd_ethernet);
+    arp_hdr->ar_pro = htons(ethertype_ip);
+    arp_hdr->ar_hln = 6;
+    arp_hdr->ar_pln = 4;
+    arp_hdr->ar_op = htons(arp_op_request);
+    memcpy(arp_hdr->ar_sha, my_if->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
+    arp_hdr->ar_sip = my_if->ip;
+    arp_hdr->ar_tip = req->ip;
+
+    printf("ARP request sent:\n");
+    print_hdr_eth(pkt);
+    print_hdr_arp(pkt + sizeof(sr_ethernet_hdr_t));
+    sr_send_packet(sr, pkt, sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t), my_if->name);
+    
+    free(pkt);
+}
 
 /* 
   This function gets called every second. For each request sent out, we keep
@@ -18,27 +84,13 @@
 */
 void sr_arpcache_sweepreqs(struct sr_instance *sr) { 
     struct sr_arpreq *req = sr->cache.requests;
-    struct sr_arpreq *next_req;
-
+    struct sr_arpreq *next_req = NULL;
+    
     while (req) {
         next_req = req->next;
-
-        /* Check if we should resend the ARP request or destroy it */
-        time_t now = time(NULL);
-        if (difftime(now, req->sent) >= 1) {
-            if (req->times_sent >= 5) {
-                /* TODO: If sent 5 times, send ICMP host unreachable and destroy the request */
-                
-                sr_arpreq_destroy(&sr->cache, req);
-            } else {
-                /* TODO: Resend ARP request */
-                /*send_arp_request(sr, req);*/
-                req->sent = now;
-                req->times_sent++;
-            }
-        }
+        handle_arp_request(sr, req);
         req = next_req;
-    }
+    }    
 }
 
 /* You should not need to touch the rest of this code. */

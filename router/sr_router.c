@@ -183,3 +183,67 @@ void ip_header(sr_ip_hdr_t *ip_hdr, uint32_t src_ip, uint32_t dst_ip, uint16_t l
 
 /* ----------------------------------------------- */
 
+
+/*--------------------------------------------------------------------- 
+ * handle_arp
+ *
+ * Given either an ARP request or ARP reply, handle the packet appropriately.
+ * If ARP opcode is unrecognized, drop the packet.
+ *---------------------------------------------------------------------*/
+void handle_arp(struct sr_instance *sr, uint8_t *pkt, char *interface, unsigned int len) {
+    sr_ethernet_hdr_t *eth_hdr = (sr_ethernet_hdr_t *)(pkt);
+    sr_arp_hdr_t *arp_hdr = (sr_arp_hdr_t *)(pkt + sizeof(sr_ethernet_hdr_t));
+
+    /* Get the interface associated with the incoming ARP request's target IP */
+    struct sr_if *my_if = sr_get_interface(sr, interface);
+
+    if (my_if) {
+        if (htons(arp_hdr->ar_op) == arp_op_request) {
+            printf("Received ARP request.\n");
+            uint8_t *ret_pkt = malloc(len);
+            memcpy(ret_pkt, pkt, len);
+
+            /* Get the interface for the incoming ARP request */
+            struct sr_if *in_if = sr_get_interface(sr, interface);
+
+            sr_ethernet_hdr_t *ret_eth_hdr = (sr_ethernet_hdr_t *)(ret_pkt);
+            sr_arp_hdr_t *ret_arp_hdr = (sr_arp_hdr_t *)(ret_pkt + sizeof(sr_ethernet_hdr_t));
+
+            memcpy(ret_eth_hdr->ether_dhost, eth_hdr->ether_shost, sizeof(uint8_t) * ETHER_ADDR_LEN);
+            memcpy(ret_eth_hdr->ether_shost, in_if->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
+            ret_eth_hdr->ether_type = ntohs(ethertype_arp);
+
+            ret_arp_hdr->ar_op = ntohs(arp_op_reply);
+            memcpy(ret_arp_hdr->ar_sha, my_if->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
+            ret_arp_hdr->ar_sip = my_if->ip;
+            memcpy(ret_arp_hdr->ar_tha, arp_hdr->ar_sha, sizeof(uint8_t) * ETHER_ADDR_LEN);
+            ret_arp_hdr->ar_tip = arp_hdr->ar_sip;
+
+            sr_send_packet(sr, ret_pkt, len, interface);
+            free(ret_pkt);
+
+        } else if (htons(arp_hdr->ar_op) == arp_op_reply) {
+            printf("Received ARP reply.\n");
+            struct sr_arpreq *req = sr_arpcache_insert(&sr->cache, arp_hdr->ar_sha, arp_hdr->ar_sip);
+
+            if (req) {
+                struct sr_packet *iterator = req->packets;
+
+                while (iterator) {
+                    sr_ethernet_hdr_t *w_eth = (sr_ethernet_hdr_t *)(iterator->buf);
+                    memcpy(w_eth->ether_dhost, arp_hdr->ar_sha, sizeof(uint8_t) * ETHER_ADDR_LEN);
+
+                    sr_send_packet(sr, iterator->buf, iterator->len, iterator->iface);
+                    iterator = iterator->next;
+                }
+                sr_arpreq_destroy(&sr->cache, req);
+            }
+        } else {
+            printf("Unrecognized ARP Opcode. Dropping.\n");
+            return;
+        }
+    } else {
+        printf("No matching interface found. Dropping packet.\n");
+    }
+}
+
