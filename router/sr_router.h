@@ -67,13 +67,18 @@ int sr_read_from_server(struct sr_instance* );
 /* -- sr_router.c -- */
 void sr_init(struct sr_instance* );
 void sr_handlepacket(struct sr_instance* , uint8_t * , unsigned int , char* );
-static int validate_checksum(uint8_t *packet, unsigned int offset, unsigned int length, uint16_t old_cksm);
+int validate_checksum(uint8_t *packet, unsigned int offset, unsigned int length, uint16_t old_cksm);
 int check_eth_len(uint8_t *packet, unsigned int len);
 int check_ip_len_cs(uint8_t *pkt, unsigned int len);
 int check_icmp_len_cs(uint8_t *pkt, int len);
 void eth_header(sr_ethernet_hdr_t *eth_hdr, struct sr_if *interface, uint8_t *dest_mac);
 void ip_header(sr_ip_hdr_t *ip_hdr, uint32_t src_ip, uint32_t dst_ip, uint16_t len, uint8_t ttl, uint8_t protocol);
 void handle_arp(struct sr_instance *sr, uint8_t *pkt, char *interface, unsigned int len);
+void handle_ip(struct sr_instance *sr, uint8_t *pkt, unsigned int len, char *interface);
+void forward_ip(struct sr_instance *sr, uint8_t *pkt, unsigned int len, char *interface);
+void send_icmp_echo_reply(struct sr_instance *sr, uint8_t *pkt, char *interface, int len);
+void send_icmp_error(int type, int code, struct sr_instance *sr, uint8_t *orig_pkt, char *interface);
+struct sr_rt *longest_prefix_match(struct sr_instance *sr, uint32_t dest_addr);
 
 /* -- sr_if.c -- */
 void sr_add_interface(struct sr_instance* , const char* );

@@ -14,8 +14,10 @@
 #include "sr_utils.h"
 
 /*
-  Handles an ARP request.
-*/
+ * Manages the handling of ARP requests, including resending ARP requests 
+ * if necessary and sending ICMP unreachable messages if the maximum number 
+ * of attempts has been exceeded.
+ */
 void handle_arp_request(struct sr_instance *sr, struct sr_arpreq *req) {
     time_t now = time(NULL);
 
@@ -25,7 +27,7 @@ void handle_arp_request(struct sr_instance *sr, struct sr_arpreq *req) {
             /* Send ICMP unreachable (type 3, code 1) to source of request */
             struct sr_packet *packet = req->packets;
             while (packet) {
-                send_icmp3_error(3, 1, sr, packet->buf, packet->iface);
+                send_icmp_error(3, 1, sr, packet->buf, packet->iface);
                 packet = packet->next;
             }
             /* Destroy the request */
@@ -40,8 +42,11 @@ void handle_arp_request(struct sr_instance *sr, struct sr_arpreq *req) {
 }
 
 /*
-  Constructs and sends an ARP request.
-*/
+ * Constructs and sends an ARP request for the specified IP address.
+ * The function creates an Ethernet frame and ARP header, populates 
+ * them with the necessary information, and sends the request to 
+ * the broadcast address. It also logs the ARP request sent.
+ */
 void send_arp_request(struct sr_instance *sr, struct sr_arpreq *req) {
     struct sr_if *my_if = sr_get_interface(sr, req->packets->iface);
     uint8_t *pkt = malloc(sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t));
@@ -87,6 +92,7 @@ void sr_arpcache_sweepreqs(struct sr_instance *sr) {
     struct sr_arpreq *next_req = NULL;
     
     while (req) {
+        /*store next_req so dont lose reference to next request when we destroy req*/
         next_req = req->next;
         handle_arp_request(sr, req);
         req = next_req;
@@ -317,4 +323,3 @@ void *sr_arpcache_timeout(void *sr_ptr) {
     
     return NULL;
 }
-
