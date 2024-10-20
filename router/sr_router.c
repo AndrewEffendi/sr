@@ -200,7 +200,7 @@ void handle_arp(struct sr_instance *sr, uint8_t *pkt, char *interface, unsigned 
     sr_arp_hdr_t *arp_hdr = (sr_arp_hdr_t *)(pkt + sizeof(sr_ethernet_hdr_t));
 
     /* Get the interface associated with the incoming ARP request's target IP */
-    struct sr_if *my_if = sr_get_interface(sr, interface);
+    struct sr_if *my_if = sr_get_interface_by_IP(sr, arp_hdr->ar_tip);
 
     if (my_if) {
         if (htons(arp_hdr->ar_op) == arp_op_request) {
@@ -270,36 +270,33 @@ void handle_ip(struct sr_instance *sr, uint8_t *pkt, unsigned int len, char *int
         return;
     }
 
-    /* Use sr_get_interface to find the interface by name */
-    struct sr_if *my_int = sr_get_interface(sr, interface);
-
+    struct sr_if *my_int = sr_get_interface_by_IP(sr, ip_hdr->ip_dst);
+    /* Check if the incoming packet is destined for this interface */
     if (my_int) {
-        /* Check if the incoming packet is destined for this interface */
-        if (ip_hdr->ip_dst == my_int->ip) {
-            if (ip_hdr->ip_p == 1) {
-                /* ICMP */
-                sr_icmp_hdr_t *icmp_hdr = (sr_icmp_hdr_t *)(pkt + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
-                if (icmp_hdr->icmp_type != 8 || !check_icmp_len_cs(pkt, len)) {
-                    /* Unsupported type*/
-                    return;
-                }
-                /*Send ICMP echo reply*/
-                send_icmp_echo_reply(sr, pkt, interface, len);
-            } else if (ip_hdr->ip_p == 0x0006 || ip_hdr->ip_p == 0x0011) {
-                /* TCP/UDP */
-                /* send error code 3, type 3*/
-                send_icmp_error(3, 3, sr, pkt, interface);
-                return;
-            } else {
-                /* Unsupported Protocol */
-                return;
+        if (ip_hdr->ip_p == 1) {
+            printf("Received ICMP packet.\n");
+
+            /* ICMP */
+            sr_icmp_hdr_t *icmp_hdr = (sr_icmp_hdr_t *)(pkt + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+            if (icmp_hdr->icmp_type != 8 || !check_icmp_len_cs(pkt, len)) {
+                /* Unsupported type*/
+                return ;
             }
+            /*Send ICMP echo reply*/
+            send_icmp_echo_reply(sr, pkt, interface, len);
+        } else if (ip_hdr->ip_p == 0x0006 || ip_hdr->ip_p == 0x0011) {
+            /* TCP/UDP */
+            /* send error code 3, type 3*/
+            send_icmp_error(3, 3, sr, pkt, interface);
+            return;
         } else {
-            /* Destined elsewhere, forward */
-            forward_ip(sr, pkt, len, interface);
+            /* Unsupported Protocol */
+            printf("Received unsupported protocol, dropping.\n");
+            return ;
         }
     } else {
-        printf("No matching interface found. Dropping packet.\n");
+        /* forward */
+        forward_ip(sr, pkt, len, interface);
     }
 }
 
@@ -394,22 +391,25 @@ static void handle_packet_forwarding(struct sr_instance *sr, uint8_t *pkt, unsig
  * match is returned, or NULL if no match is found.
  *---------------------------------------------------------------------*/
 struct sr_rt *longest_prefix_match(struct sr_instance *sr, uint32_t dest_addr) {
-    struct sr_rt *longest = NULL;
-    uint32_t longest_len = 0;
-    struct sr_rt *iterator = sr->routing_table;
+    struct sr_rt *walker = 0;
 
-    /* Iterate through the routing table to find the longest match */
-    while (iterator) {
-        if ((iterator->dest.s_addr & iterator->mask.s_addr) == (dest_addr & iterator->mask.s_addr)) {
-            uint32_t current_len = iterator->mask.s_addr & dest_addr;
-            if (current_len > longest_len) {
-                longest_len = current_len;
-                longest = iterator;
-            }
-        }
-        iterator = iterator->next;
+  /* REQUIRES */
+  assert(sr);
+  assert(dest_addr);
+
+  walker = sr->routing_table;
+  struct sr_rt *longest = 0;
+  uint32_t len = 0;
+  while (walker) {
+    if ((walker->dest.s_addr & walker->mask.s_addr) == (dest_addr & walker->mask.s_addr)) {
+      if ((walker->mask.s_addr & dest_addr) > len) {
+        len = walker->mask.s_addr & dest_addr;
+        longest = walker;
+      }
     }
-    return longest;
+    walker = walker->next;
+  }
+  return longest;
 }
 
 /*--------------------------------------------------------------------- 
