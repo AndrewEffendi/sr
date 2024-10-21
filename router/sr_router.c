@@ -196,6 +196,11 @@ void ip_header(sr_ip_hdr_t *ip_hdr, uint32_t src_ip, uint32_t dst_ip, uint16_t l
  * matching interface.
  *---------------------------------------------------------------------*/
 void handle_arp(struct sr_instance *sr, uint8_t *pkt, char *interface, unsigned int len) {
+    /* Check if the packet is too short for an ARP header */
+    if (len < sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t)) {
+        fprintf(stderr, "Received packet is too short for ARP\n");
+        return;
+    }
     sr_ethernet_hdr_t *eth_hdr = (sr_ethernet_hdr_t *)(pkt);
     sr_arp_hdr_t *arp_hdr = (sr_arp_hdr_t *)(pkt + sizeof(sr_ethernet_hdr_t));
 
@@ -216,9 +221,9 @@ void handle_arp(struct sr_instance *sr, uint8_t *pkt, char *interface, unsigned 
 
             memcpy(ret_eth_hdr->ether_dhost, eth_hdr->ether_shost, sizeof(uint8_t) * ETHER_ADDR_LEN);
             memcpy(ret_eth_hdr->ether_shost, in_if->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
-            ret_eth_hdr->ether_type = ntohs(ethertype_arp);
+            ret_eth_hdr->ether_type = htons(ethertype_arp);
 
-            ret_arp_hdr->ar_op = ntohs(arp_op_reply);
+            ret_arp_hdr->ar_op = htons(arp_op_reply);
             memcpy(ret_arp_hdr->ar_sha, my_if->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
             ret_arp_hdr->ar_sip = my_if->ip;
             memcpy(ret_arp_hdr->ar_tha, arp_hdr->ar_sha, sizeof(uint8_t) * ETHER_ADDR_LEN);
@@ -232,8 +237,9 @@ void handle_arp(struct sr_instance *sr, uint8_t *pkt, char *interface, unsigned 
             struct sr_arpreq *req = sr_arpcache_insert(&sr->cache, arp_hdr->ar_sha, arp_hdr->ar_sip);
 
             if (req) {
+                /* Send all packets on the req->packets linked list */
                 struct sr_packet *iterator = req->packets;
-
+                
                 while (iterator) {
                     sr_ethernet_hdr_t *w_eth = (sr_ethernet_hdr_t *)(iterator->buf);
                     memcpy(w_eth->ether_dhost, arp_hdr->ar_sha, sizeof(uint8_t) * ETHER_ADDR_LEN);
@@ -282,7 +288,6 @@ void handle_ip(struct sr_instance *sr, uint8_t *pkt, unsigned int len, char *int
                 /* Unsupported type*/
                 return ;
             }
-            /*Send ICMP echo reply*/
             send_icmp_echo_reply(sr, pkt, interface, len);
         } else if (ip_hdr->ip_p == 0x0006 || ip_hdr->ip_p == 0x0011) {
             /* TCP/UDP */
@@ -290,7 +295,7 @@ void handle_ip(struct sr_instance *sr, uint8_t *pkt, unsigned int len, char *int
             send_icmp_error(3, 3, sr, pkt, interface);
             return;
         } else {
-            /* Unsupported Protocol */
+            /* Unsupported Protocol, ignore*/
             printf("Received unsupported protocol, dropping.\n");
             return ;
         }
@@ -324,6 +329,7 @@ void forward_ip(struct sr_instance *sr, uint8_t *pkt, unsigned int len, char *in
 
     /* Decrement TTL and check */
     ip_hdr->ip_ttl--;
+    /* TTL expired */
     if (ip_hdr->ip_ttl == 0) {
         send_icmp_error(11, 0, sr, pkt, interface);
         return; /* Exit if TTL expired */

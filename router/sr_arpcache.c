@@ -22,9 +22,10 @@ void handle_arp_request(struct sr_instance *sr, struct sr_arpreq *req) {
     time_t now = time(NULL);
 
     /* Check if it's time to resend the request */
-    if (difftime(now, req->sent) >= 1) {
-        if (req->times_sent > 5) {
-            /* Send ICMP unreachable (type 3, code 1) to source of request */
+    if (difftime(now, req->sent) >= 1.0) {
+        /* If the ARP request is sent five times with no reply, send ICMP unreachable */
+        if (req->times_sent >= 5) {
+            /* Send ICMP host unreachable (type 3, code 1) to source address of all packets waiting on this request */
             struct sr_packet *packet = req->packets;
             while (packet) {
                 send_icmp_error(3, 1, sr, packet->buf, packet->iface);
@@ -61,7 +62,8 @@ void send_arp_request(struct sr_instance *sr, struct sr_arpreq *req) {
 
     /* Fill in Ethernet header */
     memcpy(eth_hdr->ether_shost, my_if->addr, sizeof(uint8_t) * ETHER_ADDR_LEN);
-    memset(eth_hdr->ether_dhost, 255, sizeof(uint8_t) * ETHER_ADDR_LEN);
+    /* Broadcast MAC address */
+    memset(eth_hdr->ether_dhost, 0xFF, sizeof(uint8_t) * ETHER_ADDR_LEN);
     eth_hdr->ether_type = htons(ethertype_arp);
 
     /* Fill in ARP header */
@@ -92,7 +94,7 @@ void sr_arpcache_sweepreqs(struct sr_instance *sr) {
     struct sr_arpreq *next_req = NULL;
     
     while (req) {
-        /*store next_req so dont lose reference to next request when we destroy req*/
+        /* Store next_req so we don't lose reference to next request when we destroy req */
         next_req = req->next;
         handle_arp_request(sr, req);
         req = next_req;
